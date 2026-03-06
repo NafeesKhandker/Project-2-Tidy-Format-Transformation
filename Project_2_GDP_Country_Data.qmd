@@ -1,0 +1,53 @@
+---
+title: "Project_2_GDP_Country_Data"
+author: "Khandker Qaiduzzaman"
+format: html
+editor: visual
+---
+
+# Objective
+
+Transform the wide-format GDP dataset into a tidy (long) format using the `tidyr` and `dplyr` packages in R. Once the dataset has been cleaned up, examine GDP patterns across nations and historical periods to see how national economies have evolved.
+
+# Approach
+
+### Dataset description
+
+I'll be using a dataset of countries' GDP figures from 1960 to 2022 for this project. The dataset is available here:
+
+<https://raw.githubusercontent.com/NafeesKhandker/Project-2-Tidy-Format-Transformation/refs/heads/main/GDP_by_Country.csv>
+
+GDP figures for numerous nations across several decades are included in the dataset. The dataset is currently stored in a wide format where a country is represented by each row and a year by each column.
+
+For instance, GDP values for those particular years are shown in columns like 1960, 1961, 1962, and so on.
+
+Because the year variable is contained within column names rather than being expressed as its own column, this structure does not adhere to tidy data principles. Every variable should have its own column and every observation should have its own row in a neat dataset.
+
+The following important variables are present in the dataset:
+
+-   **Country Name**: Name of the country
+-   **Country Code**: Country identifier
+-   **1960–2022 columns**: GDP values for each year
+
+The year columns must be transformed into a single column that represents the year and stores GDP figures in a separate column in order for the dataset to be analyzed.
+
+### Anticipated Challenges
+
+Managing the numerous year columns that span more than 60 years is one expected problem. During the cleaning process, these columns must be transformed into a single variable that represents the year.
+
+Dealing with missing values for specific nations and years presents another possible difficulty. Calculations and visualizations must be done carefully because certain countries might not have GDP statistics available for the full time period.
+
+Furthermore, GDP figures can be extremely high, therefore in order to make trend visualizations easier to read, the scale may need to be changed.
+
+### Implementation of Data Import
+
+```{r}
+library(tidyverse) 
+library(gt)
+
+url <- "https://raw.githubusercontent.com/NafeesKhandker/Project-2-Tidy-Format-Transformation/refs/heads/main/GDP_by_Country.csv"
+
+df <- read_csv(file = url, show_col_types = FALSE)
+
+df |> gt()
+```
