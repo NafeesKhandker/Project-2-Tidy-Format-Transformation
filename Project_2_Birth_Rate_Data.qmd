@@ -1,0 +1,53 @@
+---
+title: "Project_2_Birth_Rate_Data"
+author: "Khandker Qaiduzzaman"
+format: html
+editor: visual
+---
+
+# Objective
+
+Transform the wide-format birth rate dataset into a tidy (long) format using the `tidyr` and `dplyr` packages in R. Once the data has been cleaned up, examine birth rate trends over time and across nations to find trends and variations.
+
+# Approach
+
+### Dataset description
+
+I'll use a dataset with crude birth rates for every nation in the world for this project. The dataset was acquired via Kaggle and comes from World Bank data. The dataset is posted by Brandon Chanderban in the discussion post. The dataset can be accessed here:
+
+<https://raw.githubusercontent.com/NafeesKhandker/Project-2-Tidy-Format-Transformation/refs/heads/main/BirthRates%20of%20Countries%20(World%20Bank%20Data).csv>
+
+Currently, the dataset is kept in a wide format in which a year is represented by each column and a country by each row. Each year's birth rate values are kept in its own column (e.g., 1960, 1961, 1962, etc.).
+
+The dataset does not adhere to tidy data principles because the year variable is embedded within column headers rather than being represented as a single column. Every variable should have its own column and every observation should have its own row in a neat dataset.
+
+The dataset contains the following key variables:
+
+-   **Country Name**: Name of the country
+-   **Country Code**: Standardized country abbreviation
+-   **Indicator Name**: Name of the indicator (Crude Birth Rate)
+-   **Indicator Code**: Code representing the indicator
+-   **1960–2023 columns**: Birth rate values for each year
+
+The year columns must be reshaped into a single column using `pivot_longer()` in order to prepare the dataset for analysis.
+
+### Anticipated Challenges
+
+Managing the numerous year columns in this dataset, which span several decades, is the primary challenge. The corresponding birth rate values must be maintained while these columns are transformed into a single variable that represents the year.
+
+Missing values in specific country-year combinations could present another difficulty. To maintain the accuracy and interpretability of the analysis, these missing values must be handled carefully during the tidying process.
+
+### Implementation of Data Import
+
+The following code shows the data in a tabluar format. As we can see a significant amount of work is needed to tidy this data. It has metadata in the first rows. The actual meaningful data starts from the 5th row. Also, there are some null values present in this data which needs to be handled. The years should be listed as rows rather than columns so that the statistical analysis becomes easier.
+
+```{r}
+library(tidyverse) 
+library(gt)
+
+url <- "https://raw.githubusercontent.com/NafeesKhandker/Project-2-Tidy-Format-Transformation/refs/heads/main/Birth%20Rates%20of%20Countries%20(World%20Bank%20Data).csv"
+
+df <- read_csv(file = url, show_col_types = FALSE)
+
+df |> gt()
+```
