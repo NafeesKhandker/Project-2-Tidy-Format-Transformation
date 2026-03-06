@@ -1,0 +1,53 @@
+---
+title: "Project_2_Covid19_Cases_Data"
+author: "Khandker Qaiduzzaman"
+format: html
+editor: visual
+---
+
+# Objective
+
+Transform the wide-format global COVID-19 confirmed cases dataset into a tidy (long) format using the `tidyr` and `dplyr` packages in R. Once the data has been cleaned up, examine how confirmed COVID-19 cases have evolved over time across nations to find broad global patterns.
+
+# Approach
+
+### Dataset description
+
+For this assignment, I will use a global COVID-19 confirmed cases dataset provided by the Johns Hopkins University Center for Systems Science and Engineering (CSSE). The dataset is publicly available and can be accessed here:
+
+<https://raw.githubusercontent.com/NafeesKhandker/Project-2-Tidy-Format-Transformation/refs/heads/main/Covid19_confirmed_global.csv>
+
+Beginning in January 2020, the dataset includes daily confirmed COVID-19 case counts for various nations and regions worldwide.
+
+At the moment, the dataset is kept in a wide format in which a particular date is represented by each column and a country or region by each row. For instance, the number of confirmed cases reported on those dates is shown in columns like `1/22/20`, `1/23/20`, and `1/24/20`.
+
+The dataset does not adhere to tidy data principles because the date variable is embedded within column headers rather than being stored as a separate variable. Every variable in tidy data should have its own column, and every observation should have its own row.
+
+The following significant variables are included in the dataset:
+
+-   **Province/State**: Sub-national region
+-   **Country/Region**: Country name
+-   **Lat**: Latitude coordinate
+-   **Long**: Longitude coordinate
+-   **Date columns**: Daily confirmed case counts
+
+### Anticipated Challenges
+
+One anticipated challenge is handling the extremely large number of date columns in the dataset. These columns span multiple years and must be transformed into a single date variable during the tidying process.
+
+Another potential challenge is the presence of missing values in the Province/State column, since not all countries report regional data. Care must be taken to preserve country information while handling these missing values appropriately.
+
+Additionally, date values stored as column names will need to be converted into proper date formats after the reshaping process.
+
+### Implementation of Data Import
+
+```{r}
+library(tidyverse) 
+library(gt)
+
+url <- "https://raw.githubusercontent.com/NafeesKhandker/Project-2-Tidy-Format-Transformation/refs/heads/main/Covid19_confirmed_global.csv"
+
+df <- read_csv(file = url, show_col_types = FALSE)
+
+df |> gt()
+```
