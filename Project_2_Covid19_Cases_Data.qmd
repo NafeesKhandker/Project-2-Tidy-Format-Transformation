@@ -13,7 +13,7 @@ Transform the wide-format global COVID-19 confirmed cases dataset into a tidy (l
 
 ### Dataset description
 
-For this assignment, I will use a global COVID-19 confirmed cases dataset provided by the Johns Hopkins University Center for Systems Science and Engineering (CSSE). The dataset is publicly available and can be accessed here:
+For this project, I will use a global COVID-19 confirmed cases dataset provided by the Johns Hopkins University Center for Systems Science and Engineering (CSSE). The dataset is publicly available and can be accessed here:
 
 <https://raw.githubusercontent.com/NafeesKhandker/Project-2-Tidy-Format-Transformation/refs/heads/main/Covid19_confirmed_global.csv>
 
@@ -43,11 +43,188 @@ Additionally, date values stored as column names will need to be converted into 
 
 ```{r}
 library(tidyverse) 
+library(lubridate)
 library(gt)
 
 url <- "https://raw.githubusercontent.com/NafeesKhandker/Project-2-Tidy-Format-Transformation/refs/heads/main/Covid19_confirmed_global.csv"
 
 df <- read_csv(file = url, show_col_types = FALSE)
 
-df |> gt()
+df |> 
+  head(n = 5) |> 
+  gt()
 ```
+
+### Converting Wide Data to Tidy (Long) Format
+
+This step reshapes the dataset from wide format to tidy format using `pivot_longer()`. The date columns are converted into a single `date` variable and the corresponding values are stored in `confirmed_cases`. Additional cleaning steps convert dates to proper date format, ensure numeric case counts, trim extra spaces in region names, and rename columns for consistency. The resulting dataset follows tidy data principles where each variable has its own column and each observation has its own row.
+
+```{r}
+# Tidying pipeline and computing daily cases
+df_tidy <- df |> 
+  pivot_longer(
+    cols = 5:last_col(),
+    names_to = "date",
+    values_to = "cumulative_cases"
+  ) |>
+  mutate(
+    date = mdy(date),
+    cumulative_cases = as.integer(cumulative_cases),
+    province = str_trim(`Province/State`),
+    country = str_trim(`Country/Region`)
+  ) |> 
+  select(province, country, lat = Lat, long = Long, date, cumulative_cases) |>
+  arrange(country, province, date) |> 
+  group_by(country, province) |> 
+  mutate(
+    confirmed_cases = cumulative_cases - lag(cumulative_cases, default = 0)
+  ) |>
+  ungroup() |>
+  select(province, country, lat, long, date, confirmed_cases)
+
+df_tidy |> 
+  head(n = 5) |> 
+  gt()
+```
+
+### Handling Missing Values and Data Consistency
+
+This step addresses missing or inconsistent values in the dataset. Missing values in the `province` column are replaced with `"None"` to maintain consistent categorical values. Any missing case counts are replaced with `0` to avoid errors in later calculations. The dataset is then sorted by country, province, and date to maintain a logical chronological structure.
+
+```{r}
+# Handle missing or inconsistent values
+df_tidy <- df_tidy %>%
+  arrange(country, province, date) %>%
+  group_by(country, province) %>%
+  mutate(
+    daily_cases = confirmed_cases - lag(confirmed_cases, default = 0),
+    daily_cases = if_else(daily_cases < 0, 0L, daily_cases)  # replace negatives with 0
+  ) %>%
+  ungroup()
+
+df_tidy |> 
+  head(n = 5) |> 
+  gt()
+```
+
+### Country-Level Summary of COVID-19 Cases
+
+This analysis aggregates the tidy dataset to produce summary statistics for each country. The total confirmed cases, maximum daily cases, and average daily cases are calculated using `dplyr` functions. The resulting summary table is sorted by total cases and displayed using the `gt` package for clearer presentation and formatted numeric values.
+
+```{r}
+# Country-level summary using daily cases
+country_summary <- df_tidy %>%
+  group_by(country) %>%
+  summarise(
+    total_cases = sum(confirmed_cases, na.rm = TRUE),
+    max_daily_cases = max(confirmed_cases, na.rm = TRUE),
+    avg_daily_cases = round(mean(confirmed_cases, na.rm = TRUE))
+  ) %>%
+  arrange(desc(total_cases))
+
+country_summary |> 
+  gt() |> 
+  tab_header(
+    title = "Total Confirmed Cases per Country"
+  ) |>
+  cols_label(
+    country = "Country",
+    total_cases = "Total Cases",
+    max_daily_cases = "Max Daily Cases",
+    avg_daily_cases = "Average Daily Cases"
+  ) |>
+  fmt_number(
+    columns = c(total_cases, max_daily_cases, avg_daily_cases),
+    decimals = 0,
+    use_seps = TRUE
+  )
+```
+
+### Interactive Global Map of Average Daily COVID-19 Cases
+
+This step creates an interactive choropleth map that visualizes the global distribution of COVID-19 average daily cases by country. Country names are converted to ISO-3 country codes to enable geographic mapping. The map uses a reversed yellow-to-red color gradient where darker red indicates higher average daily case counts. Hovering over a country displays its name along with the average and maximum daily confirmed cases.
+
+```{r}
+library(dplyr)
+library(plotly)
+library(countrycode)
+
+country_map_data <- df_tidy %>%
+  group_by(country) %>%
+  summarise(
+    avg_daily_cases = round(mean(confirmed_cases, na.rm = TRUE)),
+    max_daily_cases = max(confirmed_cases, na.rm = TRUE)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    iso3 = countrycode(country, "country.name", "iso3c")
+  ) %>%
+  filter(!is.na(iso3))
+
+plot_ly(
+  data = country_map_data,
+  type = "choropleth",
+  locations = ~iso3,
+  z = ~avg_daily_cases,
+  text = ~paste(
+    "Country:", country,
+    "<br>Average Daily Cases:", format(avg_daily_cases, big.mark = ",", scientific = FALSE),
+    "<br>Max Daily Cases:", format(max_daily_cases, big.mark = ",", scientific = FALSE)
+  ),
+  hoverinfo = "text",
+  colorscale = "YlOrRd_r",
+  marker = list(line = list(color = "white", width = 0.3)),
+  colorbar = list(
+    title = "Avg Daily Cases",
+    tickformat = ","
+  )
+) %>%
+  layout(
+    title = "Global COVID-19 Average Daily Cases by Country",
+    geo = list(
+      showframe = FALSE,
+      showcoastlines = TRUE,
+      coastlinecolor = "gray",
+      projection = list(type = "natural earth")
+    )
+  )
+```
+
+### Time Series for Daily COVID-19 Confirmed Cases in the USA
+
+I have filtered for the USA and created a **time series plot** of daily confirmed cases below.
+
+```{r}
+library(scales)
+# Filter for USA daily cases
+usa_data <- df_tidy %>%
+  filter(country == "US") %>%
+  group_by(date) %>%
+  summarise(
+    daily_cases = sum(confirmed_cases, na.rm = TRUE)
+  ) %>%
+  arrange(date)
+
+ggplot(usa_data, aes(x = date, y = daily_cases)) +
+  geom_line(color = "skyblue", size = 1) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Daily COVID-19 Confirmed Cases in the USA",
+    x = "Date",
+    y = "Number of Cases",
+    caption = "Data Source: Johns Hopkins University CSSE"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+# Conclusion
+
+This project transformed a wide-format global COVID-19 dataset into a tidy structure using **tidyr** and **dplyr**, making the data easier to analyze and visualize. After cleaning and standardizing the variables, summary statistics were generated to examine country-level trends in confirmed cases. An interactive choropleth map was then created to visualize average daily cases across countries, highlighting regions with higher case levels. Overall, the analysis demonstrates how tidy data principles support clearer insights and more effective visualization of global health data.
+
+# Reference
+
+1.  OpenAI. (2026, March 8). *ChatGPT conversation with K. M. Qaiduzzaman on tidying and visualizing global COVID-19 data in R* \[Large language model\]. OpenAI. <https://chat.openai.com/>
