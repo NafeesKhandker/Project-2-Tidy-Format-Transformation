@@ -49,5 +49,247 @@ url <- "https://raw.githubusercontent.com/NafeesKhandker/Project-2-Tidy-Format-T
 
 df <- read_csv(file = url, show_col_types = FALSE)
 
-df |> gt()
+df |> 
+  head(n = 5) |> 
+  gt()
 ```
+
+```{r}
+library(tidyverse)
+library(gt)
+
+# URL to GDP CSV
+url <- "https://raw.githubusercontent.com/NafeesKhandker/Project-2-Tidy-Format-Transformation/refs/heads/main/GDP_by_Country.csv"
+
+# Read CSV into R
+df <- read_csv(file = url, show_col_types = FALSE)
+
+# Preview first 5 rows
+df |> 
+  head(5) |> 
+  gt() |> 
+  tab_header(
+    title = "Preview of Raw GDP Data",
+    subtitle = "Wide-format dataset with countries and years"
+  )
+```
+
+### Reshape from Wide to Long (Tidy) Format
+
+Convert columns `1960–2022` into a single `Year` column and a `GDP` value column. This makes the dataset tidy for analysis.
+
+```{r}
+# Reshape from wide to long (tidy) format
+gdp_long <- df |> 
+  pivot_longer(
+    cols = 3:last_col(),  # all year columns
+    names_to = "Year",
+    values_to = "GDP"
+  )
+
+# Convert Year to integer and GDP to numeric
+gdp_long <- gdp_long |> 
+  mutate(
+    Year = as.integer(Year),
+    GDP = as.numeric(GDP)
+  )
+
+# Preview first 5 rows
+gdp_long |> 
+  head(5) |> 
+  gt() |> 
+  tab_header(
+    title = "Tidy GDP Data (Country-Year Format)",
+    subtitle = "Each row is one country in one year"
+  )
+```
+
+### Normalize Variable Structure
+
+Ensure the data types are consistent. Convert `Year` to integer and `GDP` to numeric.
+
+```{r}
+# FILTER ONLY REAL COUNTRY ECONOMIES — remove groupings/regions
+gdp_long <- gdp_long |> 
+  filter(
+    !grepl(
+      pattern = paste(
+        # common grouping keywords to exclude
+        "World|income|Africa|Asia|Europe|Latin America|North America|Middle East|Pacific|Caribbean|Sub-Saharan|regional|area|aggregate|total|blend|only|Not classified|OECD|Post|Late|Early|Fragile|Least|Pre|Heavily|Small",
+        sep = "|"
+      ),
+      x = Country,
+      ignore.case = TRUE
+    )
+  )
+
+# Preview first 10 rows
+gdp_long |> 
+  filter(!is.na(GDP)) |>  # show rows with actual GDP
+  head(5) |> 
+  gt() |> 
+  tab_header(
+    title = "Normalized GDP Data for Actual Countries",
+    subtitle = "Excludes regions/aggregates; non-missing GDP only"
+  )
+```
+
+### Handle Missing or Inconsistent Values
+
+Address `NA` values. For this dataset, we will keep `NA` as-is but note that these indicate missing GDP data for that year/country.
+
+```{r}
+# Count missing GDP values
+gdp_long |> 
+  summarise(Missing_GDP = sum(is.na(GDP)))
+
+# Remove rows with missing GDP for analysis
+gdp_long <- gdp_long |> 
+  drop_na(GDP)
+
+# Confirm no missing values remain
+gdp_long |> 
+  summarise(Missing_GDP = sum(is.na(GDP)))
+```
+
+```         
+```
+
+### Summary Statistics by Country
+
+The table shows the range and average GDP for each country. Larger economies like the US or China have very high mean GDP, while smaller countries or regions have lower GDP. This helps identify countries with consistent growth versus volatile economies.
+
+```{r}
+library(scales)  # for number formatting
+
+# Helper function to format numbers
+format_gdp <- function(x) {
+  ifelse(x >= 1e12, paste0(round(x/1e12, 2), " T"),
+         ifelse(x >= 1e9, paste0(round(x/1e9, 2), " B"),
+                ifelse(x >= 1e6, paste0(round(x/1e6, 2), " M"),
+                       paste0(round(x/1e3, 2), " K"))))
+}
+
+# Summary statistics by country
+gdp_summary <- gdp_long |> 
+  group_by(Country) |> 
+  summarise(
+    Min_GDP = min(GDP),
+    Max_GDP = max(GDP),
+    Mean_GDP = mean(GDP),
+    Median_GDP = median(GDP),
+    .groups = "drop"
+  ) |> 
+  arrange(desc(Mean_GDP))
+
+# Display top 10 countries
+gdp_summary |> 
+  gt() |> 
+  fmt(
+    columns = vars(Min_GDP, Max_GDP, Mean_GDP, Median_GDP),
+    fns = format_gdp
+  ) |> 
+  tab_header(
+    title = "Summary Statistics of GDP by Country",
+    subtitle = "Values in USD (formatted in K, M, B)"
+  ) |> 
+  cols_label(
+    Country = "Country",
+    Min_GDP = "Min GDP",
+    Max_GDP = "Max GDP",
+    Mean_GDP = "Mean GDP",
+    Median_GDP = "Median GDP"
+  )
+```
+
+### GDP Trend Over Time (Line Plot)
+
+The line chart highlights GDP growth over time. Economies of the top countries show upward trends, with occasional dips corresponding to economic recessions or regional crises. Normalizing to Trillions of USD makes the chart readable.
+
+```{r}
+library(ggplot2)
+
+# Select top 10 countries by mean GDP
+top10_countries <- gdp_summary |> 
+  slice_head(n = 10) |> 
+  pull(Country)
+
+# Filter tidy data for top 10 countries
+gdp_top10 <- gdp_long |> 
+  filter(Country %in% top10_countries)
+
+# Plot GDP trends
+ggplot(gdp_top10, aes(x = Year, y = GDP, color = Country)) +
+  geom_line(size = 1) +
+  scale_y_continuous(labels = function(x) {
+    ifelse(x >= 1e12, paste0(round(x/1e12, 1), " T"),
+           ifelse(x >= 1e9, paste0(round(x/1e9, 1), " B"),
+                  ifelse(x >= 1e6, paste0(round(x/1e6, 1), " M"),
+                         paste0(round(x/1e3, 1), " K"))))
+  }) +
+  labs(
+    title = "GDP Trend Over Time for Top 10 Countries",
+    x = "Year",
+    y = "GDP (USD)",
+    color = "Country"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+### Percentage Contribution of Top 10 Countries to Total GDP
+
+This horizontal bar chart displays the share of total GDP contributed by the top 10 countries in the dataset. Each bar represents a country, with the length proportional to its percentage of the combined GDP of all countries. The values are labeled on the bars for clarity, allowing easy comparison of economic size among the leading economies. The chart highlights which countries dominate global GDP and their relative contributions within this group.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(scales)
+
+# Calculate total GDP across all countries
+total_gdp_all <- gdp_long %>%
+  group_by(Country) %>%
+  summarise(Total_GDP = sum(GDP, na.rm = TRUE)) %>%
+  ungroup() %>%
+  summarise(Global_GDP = sum(Total_GDP, na.rm = TRUE)) %>%
+  pull(Global_GDP)
+
+# Top 10 countries by total GDP
+gdp_top10_summary <- gdp_long %>%
+  group_by(Country) %>%
+  summarise(Total_GDP = sum(GDP, na.rm = TRUE)) %>%
+  ungroup() %>%
+  arrange(desc(Total_GDP)) %>%
+  slice_head(n = 10) %>%
+  mutate(Percent_of_Total = Total_GDP / total_gdp_all * 100)
+
+# Bar chart
+ggplot(gdp_top10_summary, aes(x = reorder(Country, Percent_of_Total), y = Percent_of_Total, fill = Country)) +
+  geom_col(show.legend = FALSE) +
+  geom_text(aes(label = paste0(round(Percent_of_Total, 1), "%")), 
+            hjust = -0.1, size = 4) +
+  coord_flip() +  # horizontal bars for readability
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+  labs(
+    title = "Percentage Contribution of Top 10 Countries to Global GDP",
+    x = "Country",
+    y = "Percentage of Global GDP (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5)
+  )
+```
+
+# Conclusion
+
+The bar chart highlights that the United States, China, and Japan dominate the global economy among the top 10 countries, contributing a substantial share of total GDP. While the U.S. and China account for the largest portions, smaller economies like Mexico and the Netherlands have comparatively minor contributions. This visualization makes it easy to compare the relative economic weight of these leading countries and understand their impact on global economic trends. Overall, it underscores the concentration of global economic power in a few major nations.
+
+# References
+
+1.  OpenAI. (2026, March 8). *ChatGPT conversation with K. M. Qaiduzzaman on data analysis, GDP visualization, and R programming.* Retrieved from <https://chat.openai.com/>
