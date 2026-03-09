@@ -39,15 +39,173 @@ Missing values in specific country-year combinations could present another diffi
 
 ### Implementation of Data Import
 
-The following code shows the data in a tabluar format. As we can see a significant amount of work is needed to tidy this data. It has metadata in the first rows. The actual meaningful data starts from the 5th row. Also, there are some null values present in this data which needs to be handled. The years should be listed as rows rather than columns so that the statistical analysis becomes easier.
+The following code shows the data in a tabular format. As we can see a significant amount of work is needed to tidy this data. It has metadata in the first rows. The actual meaningful data starts from the 5th row. Also, there are some null values present in this data which needs to be handled. The years should be listed as rows rather than columns so that the statistical analysis becomes easier.
 
 ```{r}
-library(tidyverse) 
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(readr)
 library(gt)
 
 url <- "https://raw.githubusercontent.com/NafeesKhandker/Project-2-Tidy-Format-Transformation/refs/heads/main/Birth%20Rates%20of%20Countries%20(World%20Bank%20Data).csv"
 
-df <- read_csv(file = url, show_col_types = FALSE)
+df <- read_csv(url, skip = 4, show_col_types = FALSE) %>%
+  select(-any_of(c("Indicator Name", "Indicator Code")))
 
-df |> gt()
+df |> 
+  head(n = 5) |> 
+  gt()
 ```
+
+### Transform the Data from Wide to Tidy Format
+
+```{r}
+df_tidy <- df %>%
+  pivot_longer(
+    cols = -c(`Country Name`, `Country Code`),
+    names_to = "Year",
+    values_to = "Birth_Rate"
+  ) %>%
+  mutate(Year = as.numeric(Year))
+
+df_tidy |> 
+  head(n = 5) |>
+  gt()
+```
+
+### Country-Level Birth Rate Data Availability Summary
+
+This table summarizes the availability of birth rate data for each country in the dataset. For every country, the first and last years with recorded birth rate values are identified, and the total number of years in that period is calculated. The number of years with available birth rate data is then counted and used to compute the percentage of data availability. This summary helps evaluate the completeness of each country’s data and supports decisions about whether a country should be retained or excluded from further analysis based on the defined availability threshold.
+
+```{r}
+df_country_stats <- df_tidy %>%
+  group_by(`Country Name`) %>%
+  summarise(
+    first_year = min(Year[!is.na(Birth_Rate)]),
+    last_year = max(Year[!is.na(Birth_Rate)]),
+    total_years = last_year - first_year + 1,
+    available_years = sum(!is.na(Birth_Rate)),
+    availability_pct = available_years / total_years,
+    .groups = "drop"
+  )
+
+df_country_stats |> 
+  head(n = 5) |> 
+  gt()
+```
+
+### Filtering Countries Based on Data Availability Threshold
+
+In this step, countries with sufficient birth rate data are selected for further analysis. Using the previously calculated data availability statistics, only countries with at least 30% of birth rate observations available within their observed time range are retained. The names of these valid countries are extracted and used to filter the original dataset. The resulting table contains birth rate records only for countries that meet the minimum data availability threshold, ensuring that subsequent analysis and imputation are performed on datasets with adequate information.
+
+```{r}
+valid_countries <- df_country_stats %>%
+  filter(availability_pct >= 0.30) %>%
+  pull(`Country Name`)
+
+df_filtered <- df_tidy %>%
+  filter(`Country Name` %in% valid_countries)
+
+df_filtered |> 
+  head(n = 5) |> 
+  gt()
+```
+
+### Imputing Missing Birth Rate Values
+
+This step addresses the remaining missing birth rate values in the filtered dataset using interpolation and directional filling techniques. For each country, the data is first sorted chronologically by year. Missing values within the observed range are then estimated using **linear interpolation**, which calculates intermediate values based on surrounding data points. After interpolation, any remaining missing values at the beginning or end of a country's time series are filled using **forward and backward filling** (`downup`). This process produces a more complete dataset while preserving the overall trend of birth rates over time for each country.
+
+```{r}
+df_imputed <- df_filtered %>%
+  group_by(`Country Name`) %>%
+  arrange(Year) %>%
+  mutate(
+    Birth_Rate = approx(Year, Birth_Rate, Year, rule = 1)$y
+  ) %>%
+  fill(Birth_Rate, .direction = "downup") %>%
+  ungroup()
+
+df_imputed |> 
+  head(n = 5) |> 
+  gt()
+```
+
+### Summary Statistics of Imputed Birth Rates by Country
+
+This step calculates key summary statistics for the imputed birth rate dataset. For each country, the **mean, minimum, and maximum birth rates** are computed across all years. The results are then sorted in descending order of mean birth rate to highlight countries with the highest average values. The table is formatted with clear labels and units, providing an easily interpretable overview of birth rate trends and variability across countries. This summary supports both visual analysis and comparison between countries.
+
+```{r}
+summary_table <- df_imputed %>%
+  group_by(`Country Name`) %>%
+  summarise(
+    Mean_Birth_Rate = mean(Birth_Rate, na.rm = TRUE),
+    Min_Birth_Rate = min(Birth_Rate, na.rm = TRUE),
+    Max_Birth_Rate = max(Birth_Rate, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+
+summary_sorted <- summary_table %>%
+  arrange(desc(Mean_Birth_Rate))
+
+summary_sorted |> 
+  head(n = 5) |>
+  gt() |>
+  tab_header(
+    title = "Summary Statistics of Birth Rates by Country",
+    subtitle = "Imputed table"
+  ) |>
+  cols_label(
+    `Country Name` = "Country",
+    Mean_Birth_Rate = "Mean Birth Rate (per 1,000 people)",
+    Min_Birth_Rate = "Minimum Birth Rate",
+    Max_Birth_Rate = "Maximum Birth Rate"
+  )
+```
+
+### Interactive Horizontal Bar Chart of Mean Birth Rates by Country
+
+This step visualizes the mean birth rates across countries using an interactive horizontal bar chart. Countries are sorted in descending order of mean birth rate, and each bar is color-coded for clarity. Hovering over a bar displays the country name and its exact mean birth rate per 1,000 people. The interactive chart allows scrolling and panning to accommodate the large number of countries, making it easy to compare birth rates and identify countries with the highest and lowest averages.
+
+```{r}
+library(plotly)
+
+plot_ly(
+  data = summary_sorted,
+  x = ~Mean_Birth_Rate,
+  y = ~reorder(`Country Name`, Mean_Birth_Rate),
+  type = "bar",
+  orientation = "h",
+  marker = list(color = "#2C7FB8"),
+  hovertemplate = paste(
+    "<b>%{y}</b><br>",
+    "Mean Birth Rate: %{x:.2f} per 1,000 people",
+    "<extra></extra>"
+  )
+) %>%
+  layout(
+    title = list(
+      text = "Mean Birth Rate by Country",
+      x = 0.5
+    ),
+    xaxis = list(
+      title = "Mean Birth Rate (per 1,000 people)"
+    ),
+    yaxis = list(
+      title = "Country",
+      automargin = TRUE,
+      categoryorder = "total ascending"
+    ),
+    height = 1500,
+    margin = list(l = 150, r = 40, t = 80, b = 60)
+  )
+```
+
+# Conclusion
+
+The analysis provides a comprehensive overview of global birth rate trends. After filtering countries with insufficient data and imputing missing values, summary statistics revealed differences in mean, minimum, and maximum birth rates across countries. The interactive bar chart highlights countries with the highest and lowest average birth rates, making comparisons straightforward. Overall, the workflow ensures reliable, complete, and interpretable data for understanding global birth rate patterns.
+
+# References
+
+1.  OpenAI. (2026, March 8). *ChatGPT conversation with K. M. Qaiduzzaman on birth rate data analysis in R*. OpenAI. <https://chat.openai.com/>
